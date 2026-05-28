@@ -145,13 +145,88 @@ function validateBloom(b: string): BloomLevel {
   return valid.includes(b as BloomLevel) ? b as BloomLevel : 'understand';
 }
 
-function parseAIResponse(raw: string): GeneratedPaper {
-  let cleaned = raw.trim().replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+function repairTruncatedJSON(raw: string): string {
+  // Find the last complete question object by locating last valid '}'
+  // then close all open arrays/objects
+  let cleaned = raw.trim();
+  
+  // Remove markdown fences
+  cleaned = cleaned.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+  
   const start = cleaned.indexOf('{');
-  const end = cleaned.lastIndexOf('}');
-  if (start !== -1 && end !== -1) cleaned = cleaned.slice(start, end + 1);
+  if (start === -1) throw new Error('No JSON object found in AI response');
+  cleaned = cleaned.slice(start);
 
-  const parsed: GeneratedPaper = JSON.parse(cleaned);
+  // Try parsing as-is first
+  const lastBrace = cleaned.lastIndexOf('}');
+  if (lastBrace !== -1) {
+    try {
+      return JSON.parse(cleaned.slice(0, lastBrace + 1)) ? cleaned.slice(0, lastBrace + 1) : cleaned;
+    } catch {}
+  }
+
+  // JSON is truncated — find last complete question by trimming to last '},'
+  // then manually close open structures
+  let depth = 0;
+  let lastCompletePos = 0;
+  let inString = false;
+  let escape = false;
+
+  for (let i = 0; i < cleaned.length; i++) {
+    const ch = cleaned[i];
+    if (escape) { escape = false; continue; }
+    if (ch === '\\' && inString) { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{' || ch === '[') depth++;
+    if (ch === '}' || ch === ']') {
+      depth--;
+      if (depth <= 2) lastCompletePos = i + 1; // at section or question level
+    }
+  }
+
+  // Trim to last stable point and close JSON
+  let partial = cleaned.slice(0, lastCompletePos);
+  // Count unclosed braces/brackets
+  let opens = 0, openBrackets = 0;
+  inString = false; escape = false;
+  for (const ch of partial) {
+    if (escape) { escape = false; continue; }
+    if (ch === '\\' && inString) { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{') opens++;
+    if (ch === '}') opens--;
+    if (ch === '[') openBrackets++;
+    if (ch === ']') openBrackets--;
+  }
+
+  // Strip trailing comma before closing
+  partial = partial.replace(/,\s*$/, '');
+  for (let i = 0; i < openBrackets; i++) partial += ']';
+  for (let i = 0; i < opens; i++) partial += '}';
+
+  return partial;
+}
+
+function parseAIResponse(raw: string): GeneratedPaper {
+  let cleaned: string;
+  try {
+    cleaned = repairTruncatedJSON(raw);
+  } catch {
+    // Fallback: old method
+    cleaned = raw.trim().replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+    const start = cleaned.indexOf('{');
+    const end = cleaned.lastIndexOf('}');
+    if (start !== -1 && end !== -1) cleaned = cleaned.slice(start, end + 1);
+  }
+
+  let parsed: GeneratedPaper;
+  try {
+    parsed = typeof cleaned === 'string' ? JSON.parse(cleaned) : cleaned;
+  } catch (e: any) {
+    throw new Error(`AI response could not be parsed as JSON. Try regenerating. (${e.message})`);
+  }
 
   parsed.sections = (parsed.sections || []).map((section: Section, si: number) => ({
     ...section,
@@ -188,7 +263,7 @@ export async function generateAssessment(
   const response = await getGroqClient().chat.completions.create({
     model: 'llama-3.3-70b-versatile',
     messages: [{ role: 'user', content: prompt }],
-    max_tokens: 4096,
+    max_tokens: 8000,
     temperature: 0.7,
   });
 

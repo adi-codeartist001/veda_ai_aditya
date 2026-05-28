@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useAssignmentStore } from '../../../store/assignmentStore';
 import { useAuthStore } from '../../../store/authStore';
@@ -54,8 +54,11 @@ export default function GeneratePage() {
     return () => clearInterval(iv);
   }, [generation.status, poll]);
 
+  const redirectedRef = useRef(false);
+
   useEffect(() => {
-    if (generation.status === 'completed') {
+    if (generation.status === 'completed' && !redirectedRef.current) {
+      redirectedRef.current = true;
       setTimeout(() => router.push(`/assignment/${id}/result`), 1200);
     }
   }, [generation.status, id, router]);

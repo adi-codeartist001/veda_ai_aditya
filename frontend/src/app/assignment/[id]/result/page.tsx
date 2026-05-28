@@ -17,7 +17,6 @@ export default function ResultPage() {
   const [assignment, setAssignment] = useState<Assignment | null>(null);
   const [loading, setLoading] = useState(true);
   const { isAuthenticated } = useAuthStore();
-  useEffect(() => { if (!isAuthenticated()) router.replace('/login'); }, []);
   const [showAnswers, setShowAnswers] = useState(false);
   const [activeVariant, setActiveVariant] = useState<'A' | 'B'>('A');
   const [variants, setVariants] = useState<PaperVariant[]>([]);
@@ -28,18 +27,37 @@ export default function ResultPage() {
 
   const paper = generation.result || assignment?.result;
 
+  // Auth guard — runs after hydration
   useEffect(() => {
+    if (!isAuthenticated()) router.replace('/login');
+  }, []);
+
+  useEffect(() => {
+    if (!id) return;
     const fetchData = async () => {
       try {
         const data = await api.getAssignment(id);
         setAssignment(data);
-        if (data.result) setGenerationStatus({ result: data.result, status: 'completed' });
-        if (data.variants) setVariants(data.variants);
-        else if (data.status === 'pending' || data.status === 'processing') {
-          router.push(`/generate/${id}?jobId=${data.jobId}`);
+        if (data.result) {
+          setGenerationStatus({ result: data.result, status: 'completed' });
         }
-      } catch { toast.error('Failed to load'); }
-      finally { setLoading(false); }
+        if (data.variants && data.variants.length > 0) {
+          setVariants(data.variants);
+        }
+        // Redirect back to generate page if still in progress
+        if (data.status === 'pending' || data.status === 'processing') {
+          router.push(`/generate/${id}?jobId=${id}`);
+          return;
+        }
+        // Show error toast if failed and no result
+        if (data.status === 'failed' && !data.result) {
+          toast.error(data.error || 'Generation failed. Try regenerating.');
+        }
+      } catch (err: any) {
+        toast.error('Failed to load assignment. Please try again.');
+      } finally {
+        setLoading(false);
+      }
     };
     fetchData();
   }, [id]);
