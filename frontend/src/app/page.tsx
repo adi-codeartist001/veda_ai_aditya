@@ -5,18 +5,34 @@ import { useAuthStore } from '../store/authStore';
 import Sidebar from '../components/Sidebar';
 import TopBar from '../components/TopBar';
 import Link from 'next/link';
+import { api } from '../lib/api';
 
 export default function HomePage() {
   const { isAuthenticated, user } = useAuthStore();
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
+  const [stats, setStats] = useState({
+    papers: 0,
+    completed: 0,
+    failed: 0,
+    pending: 0,
+  });
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setMounted(true);
-    if (!isAuthenticated()) router.replace('/login');
+    if (!isAuthenticated()) { router.replace('/login'); return; }
+    api.listAssignments(1, 100).then(res => {
+      const data = res.data || [];
+      setStats({
+        papers: data.filter((a: any) => a.status === 'completed').length,
+        completed: data.filter((a: any) => a.status === 'completed').length,
+        failed: data.filter((a: any) => a.status === 'failed').length,
+        pending: data.filter((a: any) => a.status === 'pending' || a.status === 'processing').length,
+      });
+    }).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
-  // Prevent hydration mismatch - render nothing until client mounted
   if (!mounted) return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
       <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
@@ -28,11 +44,11 @@ export default function HomePage() {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
 
-  const stats = [
-    { label: 'Papers Generated', value: '—', icon: '📄', color: 'bg-orange-50 text-orange-600' },
-    { label: 'Students Taught', value: '—', icon: '👥', color: 'bg-blue-50 text-blue-600' },
-    { label: 'Mock Sessions', value: '—', icon: '🎭', color: 'bg-purple-50 text-purple-600' },
-    { label: 'Time Saved', value: '—', icon: '⏱', color: 'bg-green-50 text-green-600' },
+  const statCards = [
+    { label: 'Papers Generated', value: loading ? '...' : stats.papers, icon: '📄', color: 'bg-orange-50 text-orange-600' },
+    { label: 'Completed', value: loading ? '...' : stats.completed, icon: '✅', color: 'bg-green-50 text-green-600' },
+    { label: 'Processing', value: loading ? '...' : stats.pending, icon: '⏳', color: 'bg-blue-50 text-blue-600' },
+    { label: 'Failed', value: loading ? '...' : stats.failed, icon: '❌', color: 'bg-red-50 text-red-600' },
   ];
 
   const quickActions = [
@@ -60,8 +76,8 @@ export default function HomePage() {
 
           {/* Stats */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-            {stats.map(s => (
-              <div key={s.label} className="card p-5">
+            {statCards.map(s => (
+              <div key={s.label} className="card p-5 hover:shadow-md transition-all">
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl mb-3 ${s.color}`}>
                   {s.icon}
                 </div>
@@ -86,6 +102,26 @@ export default function HomePage() {
               </Link>
             ))}
           </div>
+
+          {/* Recent assignments */}
+          {stats.papers > 0 && (
+            <div className="mb-8">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold text-gray-900">Recent Papers</h2>
+                <Link href="/assignment" className="text-sm text-orange-600 hover:text-orange-700 font-medium">View all →</Link>
+              </div>
+              <div className="card p-5">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center text-lg">📄</div>
+                  <div>
+                    <p className="font-semibold text-gray-900">{stats.completed} papers ready</p>
+                    <p className="text-sm text-gray-500">Click "View Assignments" to access them</p>
+                  </div>
+                  <Link href="/assignment" className="ml-auto btn-primary !py-2 !px-4 text-xs">View →</Link>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Pro tip */}
           <div className="card p-6 border-l-4 border-orange-400">
