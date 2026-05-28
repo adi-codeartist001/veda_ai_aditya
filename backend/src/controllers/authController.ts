@@ -4,9 +4,11 @@ import { UserModel } from '../models/User';
 import { AuthRequest } from '../middleware/auth';
 
 const signToken = (id: string) =>
-  jwt.sign({ id }, process.env.JWT_SECRET || 'secret', {
-    expiresIn: (process.env.JWT_EXPIRES_IN || '7d') as string,
-  });
+  jwt.sign(
+    { id },
+    process.env.JWT_SECRET || 'secret',
+    { expiresIn: '7d' } as any
+  );
 
 export const register = async (req: Request, res: Response): Promise<void> => {
   try {

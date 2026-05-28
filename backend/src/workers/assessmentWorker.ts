@@ -63,7 +63,7 @@ async function start() {
   console.log('✅ Worker MongoDB connected');
 
   const worker = new Worker<JobData>(QUEUE_NAME, processJob, {
-    connection,
+    connection: connection as any,
     concurrency: 3,
   });
 
